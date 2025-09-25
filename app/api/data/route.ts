@@ -72,64 +72,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: 名前を変更
-export async function PATCH(request: NextRequest) {
-  try {
-    const { oldName, newName } = await request.json();
-
-    // 現在のデータを取得
-    const getResponse = await fetch(
-      `${JSONBIN_BASE_URL}/${JSONBIN_BIN_ID}/latest`,
-      {
-        method: "GET",
-        headers,
-      }
-    );
-
-    let currentData;
-    if (getResponse.ok) {
-      const data = await getResponse.json();
-      currentData = data.record;
-    } else {
-      currentData = initialData;
-    }
-
-    // 名前を更新
-    const updatedData = {
-      ...currentData,
-      userName: newName,
-      // スレッドとコメントの投稿者名も更新
-      threads: currentData.threads.map((thread: any) => ({
-        ...thread,
-        author: thread.author === oldName ? newName : thread.author,
-        comments: thread.comments.map((comment: any) => ({
-          ...comment,
-          author: comment.author === oldName ? newName : comment.author,
-        })),
-      })),
-    };
-
-    // データを保存
-    const response = await fetch(`${JSONBIN_BASE_URL}/${JSONBIN_BIN_ID}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(updatedData),
-    });
-
-    if (response.ok) {
-      return NextResponse.json({ success: true, data: updatedData });
-    } else {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-  } catch (error) {
-    console.error("Error updating name:", error);
-    return NextResponse.json(
-      { error: "Failed to update name" },
-      { status: 500 }
-    );
-  }
-}
-
 // DELETE: データを削除（管理者用）
 export async function DELETE() {
   try {

@@ -63,12 +63,31 @@ interface AppData {
   availableNames?: string[];
 }
 
+// ローカルストレージのキー
+const LOCAL_STORAGE_KEY = "mouma_user_name";
+
+// ローカルストレージからユーザー名を取得
+const getLocalUserName = (): string => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem(LOCAL_STORAGE_KEY) || "";
+  }
+  return "";
+};
+
+// ローカルストレージにユーザー名を保存
+const setLocalUserName = (name: string): void => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(LOCAL_STORAGE_KEY, name);
+  }
+};
+
 export default function Home() {
   const [appData, setAppData] = useState<AppData>({
     threads: [],
     userName: "",
     availableNames: [],
   });
+  const [localUserName, setLocalUserNameState] = useState<string>("");
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
@@ -81,12 +100,16 @@ export default function Home() {
   const [tempUserName, setTempUserName] = useState("");
   const [selectedName, setSelectedName] = useState("");
   const [isAddingNewName, setIsAddingNewName] = useState(false);
-  const [showNameChangeDialog, setShowNameChangeDialog] = useState(false);
+  const [showChangeNameDialog, setShowChangeNameDialog] = useState(false);
   const [newUserName, setNewUserName] = useState("");
 
   // データの読み込み
   useEffect(() => {
     const loadData = async () => {
+      // ローカルストレージからユーザー名を取得
+      const localName = getLocalUserName();
+      setLocalUserNameState(localName);
+
       try {
         const response = await fetch("/api/data");
         if (response.ok) {
@@ -102,7 +125,8 @@ export default function Home() {
           }));
           setAppData(parsedData);
 
-          if (!parsedData.userName) {
+          // ローカルストレージに名前がない場合のみダイアログ表示
+          if (!localName) {
             setShowNameDialog(true);
           }
         } else {
@@ -150,6 +174,10 @@ export default function Home() {
     }
 
     if (nameToSet) {
+      // ローカルストレージに保存
+      setLocalUserName(nameToSet);
+      setLocalUserNameState(nameToSet);
+
       const updatedAvailableNames = appData.availableNames || [];
       if (!updatedAvailableNames.includes(nameToSet)) {
         updatedAvailableNames.push(nameToSet);
@@ -157,7 +185,6 @@ export default function Home() {
 
       const newData = {
         ...appData,
-        userName: nameToSet,
         availableNames: updatedAvailableNames,
       };
       await saveData(newData);
@@ -165,46 +192,6 @@ export default function Home() {
       setTempUserName("");
       setSelectedName("");
       setIsAddingNewName(false);
-    }
-  };
-
-  // 名前の変更
-  const handleChangeName = async () => {
-    if (newUserName.trim() && newUserName !== appData.userName) {
-      try {
-        const response = await fetch("/api/data", {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            oldName: appData.userName,
-            newName: newUserName.trim(),
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.data) {
-            // Date オブジェクトを復元
-            result.data.threads = result.data.threads.map((thread: any) => ({
-              ...thread,
-              createdAt: new Date(thread.createdAt),
-              comments: thread.comments.map((comment: any) => ({
-                ...comment,
-                timestamp: new Date(comment.timestamp),
-              })),
-            }));
-            setAppData(result.data);
-          }
-          setShowNameChangeDialog(false);
-          setNewUserName("");
-        } else {
-          console.error("Failed to change name");
-        }
-      } catch (error) {
-        console.error("Error changing name:", error);
-      }
     }
   };
 
@@ -220,6 +207,30 @@ export default function Home() {
     }
   };
 
+  // 名前変更
+  const handleChangeName = async () => {
+    if (newUserName.trim() && newUserName.trim() !== localUserName) {
+      // ローカルストレージを更新
+      setLocalUserName(newUserName.trim());
+      setLocalUserNameState(newUserName.trim());
+
+      // 利用可能な名前のリストに追加
+      const updatedAvailableNames = appData.availableNames || [];
+      if (!updatedAvailableNames.includes(newUserName.trim())) {
+        updatedAvailableNames.push(newUserName.trim());
+      }
+
+      const newData = {
+        ...appData,
+        availableNames: updatedAvailableNames,
+      };
+      await saveData(newData);
+
+      setShowChangeNameDialog(false);
+      setNewUserName("");
+    }
+  };
+
   // 全データ削除
   const handleClearAllData = async () => {
     if (
@@ -231,7 +242,10 @@ export default function Home() {
         });
 
         if (response.ok) {
-          setAppData({ threads: [], userName: "" });
+          setAppData({ threads: [], userName: "", availableNames: [] });
+          // ローカルストレージもクリア
+          setLocalUserName("");
+          setLocalUserNameState("");
           setShowAdminPanel(false);
           setShowNameDialog(true);
         } else {
@@ -250,8 +264,8 @@ export default function Home() {
         id: Date.now().toString(),
         title: newThreadTitle.trim(),
         description: newThreadDescription.trim(),
-        author: appData.userName,
-        participants: [appData.userName],
+        author: localUserName,
+        participants: [localUserName],
         comments: [],
         createdAt: new Date(),
       };
@@ -273,11 +287,11 @@ export default function Home() {
     const updatedThreads = appData.threads.map((thread) => {
       if (
         thread.id === threadId &&
-        !thread.participants.includes(appData.userName)
+        !thread.participants.includes(localUserName)
       ) {
         return {
           ...thread,
-          participants: [...thread.participants, appData.userName],
+          participants: [...thread.participants, localUserName],
         };
       }
       return thread;
@@ -292,7 +306,7 @@ export default function Home() {
       const newCommentObj: Comment = {
         id: Date.now().toString(),
         content: newComment.trim(),
-        author: appData.userName,
+        author: localUserName,
         timestamp: new Date(),
       };
 
@@ -319,11 +333,11 @@ export default function Home() {
   };
 
   const isParticipant = (thread: Thread) => {
-    return thread.participants.includes(appData.userName);
+    return thread.participants.includes(localUserName);
   };
 
   const isAuthor = (thread: Thread) => {
-    return thread.author === appData.userName;
+    return thread.author === localUserName;
   };
 
   // 管理画面ビュー
@@ -364,7 +378,11 @@ export default function Home() {
                   現在のデータ状況
                 </h3>
                 <ul className="text-sm text-yellow-700 space-y-1">
-                  <li>• 登録ユーザー: {appData.userName || "未設定"}</li>
+                  <li>• 現在のユーザー: {localUserName || "未設定"}</li>
+                  <li>
+                    • 利用可能なユーザー名:{" "}
+                    {(appData.availableNames || []).length}件
+                  </li>
                   <li>• アイデアスレッド数: {appData.threads.length}件</li>
                   <li>
                     • 総コメント数:{" "}
@@ -374,7 +392,41 @@ export default function Home() {
                     )}
                     件
                   </li>
+                  <li>
+                    • 投稿者別スレッド数:{" "}
+                    {
+                      Array.from(new Set(appData.threads.map((t) => t.author)))
+                        .length
+                    }
+                    人
+                  </li>
                 </ul>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 className="font-semibold text-blue-800 mb-2">
+                  ユーザー情報
+                </h3>
+                <div className="text-sm text-blue-700 space-y-2">
+                  <p>
+                    <strong>利用可能なユーザー名:</strong>
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(appData.availableNames || []).map((name) => (
+                      <div
+                        key={name}
+                        className="flex items-center justify-between bg-white p-2 rounded border"
+                      >
+                        <span>{name}</span>
+                        {name === localUserName && (
+                          <Badge variant="default" className="text-xs">
+                            現在
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -410,17 +462,18 @@ export default function Home() {
                 アイデア掲示板
               </h1>
               <p className="text-gray-600">
-                ようこそ、
-                <button
+                ようこそ、{localUserName}さん
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
-                    setNewUserName(appData.userName);
-                    setShowNameChangeDialog(true);
+                    setNewUserName(localUserName);
+                    setShowChangeNameDialog(true);
                   }}
-                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors"
+                  className="ml-2 h-auto p-1 text-xs"
                 >
-                  {appData.userName}
-                </button>
-                さん
+                  (変更)
+                </Button>
               </p>
             </div>
             <div className="flex gap-2">
@@ -462,7 +515,15 @@ export default function Home() {
                 >
                   <CardHeader>
                     <div className="flex justify-between items-start">
-                      <CardTitle className="text-xl">{thread.title}</CardTitle>
+                      <div>
+                        <CardTitle className="text-xl">
+                          {thread.title}
+                        </CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">
+                          投稿者: {thread.author}
+                          {thread.author === localUserName && " (あなた)"}
+                        </p>
+                      </div>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <Users className="w-4 h-4" />
                         {thread.participants.length}
@@ -625,12 +686,15 @@ export default function Home() {
         </Dialog>
 
         {/* 名前変更ダイアログ */}
-        <Dialog open={showNameChangeDialog} onOpenChange={setShowNameChangeDialog}>
+        <Dialog
+          open={showChangeNameDialog}
+          onOpenChange={setShowChangeNameDialog}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>名前を変更</DialogTitle>
               <DialogDescription>
-                新しい名前を入力してください。既存の投稿やコメントの名前も一緒に更新されます。
+                新しい名前を入力してください。今後の投稿やコメントにこの名前が使用されます。
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -649,7 +713,7 @@ export default function Home() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowNameChangeDialog(false);
+                  setShowChangeNameDialog(false);
                   setNewUserName("");
                 }}
               >
@@ -657,7 +721,9 @@ export default function Home() {
               </Button>
               <Button
                 onClick={handleChangeName}
-                disabled={!newUserName.trim() || newUserName === appData.userName}
+                disabled={
+                  !newUserName.trim() || newUserName.trim() === localUserName
+                }
               >
                 変更する
               </Button>
@@ -735,10 +801,16 @@ export default function Home() {
             <h1 className="text-2xl font-bold text-gray-900">
               {selectedThread.title}
             </h1>
-            <p className="text-gray-600 flex items-center gap-2 mt-1">
-              <Users className="w-4 h-4" />
-              {selectedThread.participants.length}人が参加中
-            </p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-gray-600 flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                {selectedThread.participants.length}人が参加中
+              </p>
+              <p className="text-gray-600">
+                投稿者: {selectedThread.author}
+                {selectedThread.author === localUserName && " (あなた)"}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -771,11 +843,21 @@ export default function Home() {
                   {selectedThread.comments.map((comment) => (
                     <div key={comment.id} className="bg-gray-50 rounded-lg p-4">
                       <div className="flex justify-between items-start mb-2">
-                        <span className="font-medium text-gray-900">
-                          {isAuthor(selectedThread)
-                            ? comment.author
-                            : "匿名ユーザー"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">
+                            {comment.author}
+                          </span>
+                          {comment.author === localUserName && (
+                            <Badge variant="default" className="text-xs">
+                              あなた
+                            </Badge>
+                          )}
+                          {comment.author === selectedThread.author && (
+                            <Badge variant="secondary" className="text-xs">
+                              投稿者
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-sm text-gray-500">
                           {comment.timestamp.toLocaleString("ja-JP")}
                         </span>
