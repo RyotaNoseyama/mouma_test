@@ -34,3 +34,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Keep data directory structure but ignore sensitive data files (optional)
+# /data/*.json

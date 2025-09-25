@@ -1,0 +1,23 @@
+{
+  "threads": [
+    {
+      "id": "1758797425349",
+      "title": "テスト",
+      "description": "テスト",
+      "author": "能勢山",
+      "participants": [
+        "能勢山"
+      ],
+      "comments": [
+        {
+          "id": "1758797431830",
+          "content": "テストてstudioお",
+          "author": "能勢山",
+          "timestamp": "2025-09-25T10:50:31.830Z"
+        }
+      ],
+      "createdAt": "2025-09-25T10:50:25.349Z"
+    }
+  ],
+  "userName": "能勢山"
+}
