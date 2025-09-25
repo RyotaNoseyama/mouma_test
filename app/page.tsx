@@ -14,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -53,12 +60,14 @@ interface Thread {
 interface AppData {
   threads: Thread[];
   userName: string;
+  availableNames?: string[];
 }
 
 export default function Home() {
   const [appData, setAppData] = useState<AppData>({
     threads: [],
     userName: "",
+    availableNames: [],
   });
   const [showNameDialog, setShowNameDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -70,6 +79,10 @@ export default function Home() {
   const [newThreadDescription, setNewThreadDescription] = useState("");
   const [newComment, setNewComment] = useState("");
   const [tempUserName, setTempUserName] = useState("");
+  const [selectedName, setSelectedName] = useState("");
+  const [isAddingNewName, setIsAddingNewName] = useState(false);
+  const [showNameChangeDialog, setShowNameChangeDialog] = useState(false);
+  const [newUserName, setNewUserName] = useState("");
 
   // データの読み込み
   useEffect(() => {
@@ -128,11 +141,70 @@ export default function Home() {
 
   // 名前の設定
   const handleSetName = async () => {
-    if (tempUserName.trim()) {
-      const newData = { ...appData, userName: tempUserName.trim() };
+    let nameToSet = "";
+
+    if (isAddingNewName && tempUserName.trim()) {
+      nameToSet = tempUserName.trim();
+    } else if (selectedName) {
+      nameToSet = selectedName;
+    }
+
+    if (nameToSet) {
+      const updatedAvailableNames = appData.availableNames || [];
+      if (!updatedAvailableNames.includes(nameToSet)) {
+        updatedAvailableNames.push(nameToSet);
+      }
+
+      const newData = {
+        ...appData,
+        userName: nameToSet,
+        availableNames: updatedAvailableNames,
+      };
       await saveData(newData);
       setShowNameDialog(false);
       setTempUserName("");
+      setSelectedName("");
+      setIsAddingNewName(false);
+    }
+  };
+
+  // 名前の変更
+  const handleChangeName = async () => {
+    if (newUserName.trim() && newUserName !== appData.userName) {
+      try {
+        const response = await fetch("/api/data", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            oldName: appData.userName,
+            newName: newUserName.trim(),
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            // Date オブジェクトを復元
+            result.data.threads = result.data.threads.map((thread: any) => ({
+              ...thread,
+              createdAt: new Date(thread.createdAt),
+              comments: thread.comments.map((comment: any) => ({
+                ...comment,
+                timestamp: new Date(comment.timestamp),
+              })),
+            }));
+            setAppData(result.data);
+          }
+          setShowNameChangeDialog(false);
+          setNewUserName("");
+        } else {
+          console.error("Failed to change name");
+        }
+      } catch (error) {
+        console.error("Error changing name:", error);
+      }
     }
   };
 
@@ -337,7 +409,19 @@ export default function Home() {
               <h1 className="text-4xl font-bold text-gray-900 mb-2">
                 アイデア掲示板
               </h1>
-              <p className="text-gray-600">ようこそ、{appData.userName}さん</p>
+              <p className="text-gray-600">
+                ようこそ、
+                <button
+                  onClick={() => {
+                    setNewUserName(appData.userName);
+                    setShowNameChangeDialog(true);
+                  }}
+                  className="text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors"
+                >
+                  {appData.userName}
+                </button>
+                さん
+              </p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -434,23 +518,67 @@ export default function Home() {
             <DialogHeader>
               <DialogTitle>ようこそ！</DialogTitle>
               <DialogDescription>
-                アイデア掲示板を利用するために、お名前を入力してください。
+                アイデア掲示板を利用するために、お名前を選択するか新しい名前を入力してください。
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">お名前</Label>
-                <Input
-                  id="name"
-                  value={tempUserName}
-                  onChange={(e) => setTempUserName(e.target.value)}
-                  placeholder="山田太郎"
-                  onKeyPress={(e) => e.key === "Enter" && handleSetName()}
-                />
-              </div>
+              {!isAddingNewName && (
+                <div className="grid gap-2">
+                  <Label>既存の名前から選択</Label>
+                  <Select value={selectedName} onValueChange={setSelectedName}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="名前を選択してください" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(appData.availableNames || []).map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsAddingNewName(true)}
+                    className="mt-2"
+                  >
+                    新しい名前を追加
+                  </Button>
+                </div>
+              )}
+
+              {isAddingNewName && (
+                <div className="grid gap-2">
+                  <Label htmlFor="name">新しいお名前</Label>
+                  <Input
+                    id="name"
+                    value={tempUserName}
+                    onChange={(e) => setTempUserName(e.target.value)}
+                    placeholder="山田太郎"
+                    onKeyPress={(e) => e.key === "Enter" && handleSetName()}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsAddingNewName(false);
+                      setTempUserName("");
+                    }}
+                    className="mt-2"
+                  >
+                    既存の名前から選択に戻る
+                  </Button>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button onClick={handleSetName} disabled={!tempUserName.trim()}>
+              <Button
+                onClick={handleSetName}
+                disabled={
+                  !isAddingNewName ? !selectedName : !tempUserName.trim()
+                }
+              >
                 始める
               </Button>
             </DialogFooter>
@@ -491,6 +619,47 @@ export default function Home() {
                 disabled={!adminPassword.trim()}
               >
                 ログイン
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 名前変更ダイアログ */}
+        <Dialog open={showNameChangeDialog} onOpenChange={setShowNameChangeDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>名前を変更</DialogTitle>
+              <DialogDescription>
+                新しい名前を入力してください。既存の投稿やコメントの名前も一緒に更新されます。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="newName">新しい名前</Label>
+                <Input
+                  id="newName"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  placeholder="新しい名前を入力"
+                  onKeyPress={(e) => e.key === "Enter" && handleChangeName()}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowNameChangeDialog(false);
+                  setNewUserName("");
+                }}
+              >
+                キャンセル
+              </Button>
+              <Button
+                onClick={handleChangeName}
+                disabled={!newUserName.trim() || newUserName === appData.userName}
+              >
+                変更する
               </Button>
             </DialogFooter>
           </DialogContent>
